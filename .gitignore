@@ -1,0 +1,18 @@
+# 1. 수리카타가 실시간으로 만드는 무거운 로그 파일들은 제외합니다
+suricata/log/*
+!suricata/log/.gitkeep
+
+# 2. 맥북(Mac)이 자동으로 만드는 숨김 시스템 파일 제외
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# 3. 파이썬 프로그램 실행할 때 생기는 임시 찌꺼기 폴더 제외
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.venv/
+venv/
+ENV/

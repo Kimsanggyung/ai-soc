@@ -1,0 +1,41 @@
+version: '3.8'
+
+networks:
+  sec_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+services:
+  gateway:
+    image: nginx:alpine
+    container_name: soc-gateway
+    ports:
+      - "8080:80"
+    volumes:
+      - ./gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      sec_network:
+        ipv4_address: 172.20.0.10
+    depends_on:
+      - webserver
+
+  webserver:
+    image: httpd:alpine
+    container_name: soc-webserver
+    networks:
+      sec_network:
+        ipv4_address: 172.20.0.20
+
+  suricata:
+    image: jasonish/suricata:latest
+    container_name: soc-suricata
+    network_mode: "service:gateway"
+    # [치트키 탑재]: 꼬이기 쉬운 외부 yaml 설정 대신, 내부 기본 엔진으로 룰셋만 읽어 즉시 작동시킵니다.
+    command: ["suricata", "-S", "/var/lib/suricata/rules/local.rules", "-i", "eth0"]
+    volumes:
+      - ./suricata/rules:/var/lib/suricata/rules
+      - ./suricata/log:/var/log/suricata
+    depends_on:
+      - gateway

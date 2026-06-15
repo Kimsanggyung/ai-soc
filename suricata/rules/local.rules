@@ -1,0 +1,2 @@
+alert tcp any any -> any 80 (msg:"[DANGER] 나쁜 해커가 비밀번호 파일을 노리고 있습니다!"; content:"/etc/passwd"; sid:1000001; rev:1;)
+alert tcp any any -> any 80 (msg:"[DANGER] 나쁜 해커가 시스템 명령어를 실행하려고 합니다!"; content:"cmd="; sid:1000002; rev:1;)

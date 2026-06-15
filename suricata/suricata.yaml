@@ -1,0 +1,34 @@
+%YAML 1.1
+---
+suricata-version: "7.0"
+
+# 로그가 저장될 방 주소
+default-log-dir: /var/log/suricata/
+
+# 규칙 메모장 위치 알려주기
+default-rule-path: /var/lib/suricata/rules
+rule-files:
+  - local.rules
+
+# eve.json 블랙박스 파일 켜기
+outputs:
+  - eve-log:
+      enabled: yes
+      filetype: regular
+      filename: eve.json
+      types:
+        - alert:
+            payload: yes
+            payload-printable: yes
+            packet: yes
+            http: yes
+
+# eth0 인터넷 카드를 감시하겠다는 설정
+af-packet:
+  - interface: eth0
+    cluster-id: 99
+    cluster-type: cluster_flow
+    defrag: yes
+
+logging:
+  default-log-level: notice

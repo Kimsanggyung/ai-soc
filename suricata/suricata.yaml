@@ -1,0 +1,16 @@
+%YAML 1.1
+---
+max-pending-packets: 1024
+
+outputs:
+  - eve-log:
+      enabled: yes
+      filetype: regular
+      filename: eve.json
+      types:
+        - alert:
+            payload: yes
+            payload-buffer-size: 4kb
+            payload-printable: yes
+            packet: yes
+            http: yes

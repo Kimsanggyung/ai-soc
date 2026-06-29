@@ -1,1 +1,162 @@
-alert http any any -> any any (msg:"🔴 [ALERT] ATTACK DETECTED: Path Traversal Attempt"; content:".."; sid:1000001; rev:1;)
+################################################################################
+# AI-SOC Custom Detection Ruleset (local.rules)
+# 시나리오: 웹셸 업로드 -> RCE -> C2 세션 -> 내부 정찰 -> 데이터 유출
+#
+# [전제 조건]
+#  - $HOME_NET / $EXTERNAL_NET : 미설정 시 Suricata 기본값 사용.
+#    현재 도커 서브넷(172.20.0.0/16)은 기본 HOME_NET(172.16.0.0/12)에 포함되어
+#    별도 설정 없이 동작하지만, suricata.yaml vars에 명시하는 것을 권장.
+#  - file.data(파일 페이로드) 룰: app-layer http 파싱이 켜져 있어야 동작.
+#  - ja3.hash 룰: suricata.yaml에 app-layer.protocols.tls.ja3-fingerprints: yes 필요.
+#  - SID 1000000~1999999 : 로컬 커스텀 룰 예약 대역.
+################################################################################
+
+#===============================================================================
+# [1] 웹 애플리케이션 공격 (Initial Access / Web Attacks)
+#===============================================================================
+
+# 1-1. Path Traversal (인코딩 우회 변형 포함) - 기존 룰 개선판
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"WEB Path Traversal Attempt in URI"; \
+    flow:established,to_server; http.uri; content:".."; \
+    pcre:"/(\.\.[\/\\]|%2e%2e|\.\.%2f|\.\.%5c|%252e)/i"; \
+    classtype:web-application-attack; metadata:mitre_technique_id T1083; \
+    sid:1000001; rev:2;)
+
+# 1-2. 민감 파일 직접 접근 시도 (/etc/passwd 등)
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"WEB Sensitive File Access etc-passwd"; \
+    flow:established,to_server; http.uri; content:"etc/passwd"; nocase; \
+    classtype:web-application-attack; metadata:mitre_technique_id T1083; \
+    sid:1000002; rev:1;)
+
+# 1-3. SQL Injection 시도 (URI 기반)
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"WEB SQL Injection Attempt in URI"; \
+    flow:established,to_server; http.uri; \
+    pcre:"/(union\s+select|or\s+1\s*=\s*1|information_schema|sleep\(|benchmark\(|\bxp_cmdshell\b)/i"; \
+    classtype:web-application-attack; metadata:mitre_technique_id T1190; \
+    sid:1000003; rev:1;)
+
+# 1-4. OS Command Injection 시도
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"WEB OS Command Injection Attempt"; \
+    flow:established,to_server; http.uri; \
+    pcre:"/(\;|\||%3b|%7c|`|\$\()\s*(cat|whoami|id|uname|ls|nc|bash|sh|wget|curl|powershell)/i"; \
+    classtype:web-application-attack; metadata:mitre_technique_id T1059; \
+    sid:1000004; rev:1;)
+
+# 1-5. PHP 웹셸 업로드 패턴 (POST 본문)
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"WEB PHP Web Shell Upload Pattern"; \
+    flow:established,to_server; http.request_body; content:"<?php"; nocase; \
+    pcre:"/(eval|system|shell_exec|passthru|base64_decode|assert|popen)\s*\(/i"; \
+    classtype:web-application-attack; metadata:mitre_technique_id T1505.003; \
+    sid:1000005; rev:1;)
+
+# 1-6. 알려진 웹셸 파일명 접근
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"WEB Known Web Shell Filename Access"; \
+    flow:established,to_server; http.uri; \
+    pcre:"/\/(c99|r57|wso|b374k|cmd|shell|backdoor|webshell)\.(php|jsp|jspx|asp|aspx)/i"; \
+    classtype:trojan-activity; metadata:mitre_technique_id T1505.003; \
+    sid:1000006; rev:1;)
+
+#===============================================================================
+# [2] 정찰 / 스캐닝 (Reconnaissance)
+#===============================================================================
+
+# 2-1. 취약점 스캐너 User-Agent 탐지
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"RECON Vulnerability Scanner User-Agent"; \
+    flow:established,to_server; http.user_agent; \
+    pcre:"/(nikto|sqlmap|nmap|masscan|dirbuster|gobuster|wpscan|nessus|acunetix|nuclei)/i"; \
+    classtype:attempted-recon; metadata:mitre_technique_id T1595; \
+    sid:1000010; rev:1;)
+
+# 2-2. 외부 -> 내부 TCP 포트 스캔 (10초 내 동일 출발지 30회 SYN)
+alert tcp $EXTERNAL_NET any -> $HOME_NET any (msg:"RECON External TCP Port Scan SYN Flood"; \
+    flow:to_server; flags:S,12; \
+    threshold:type both, track by_src, count 30, seconds 10; \
+    classtype:attempted-recon; metadata:mitre_technique_id T1046; \
+    sid:1000011; rev:1;)
+
+# 2-3. 내부 -> 내부 스캔 (Lateral Movement 정찰 단계)
+alert tcp $HOME_NET any -> $HOME_NET any (msg:"RECON Internal Host Scan Lateral Recon"; \
+    flow:to_server; flags:S,12; \
+    threshold:type both, track by_src, count 30, seconds 10; \
+    classtype:attempted-recon; metadata:mitre_technique_id T1046; \
+    sid:1000012; rev:1;)
+
+#===============================================================================
+# [3] C2 통신 / 악성코드 다운로드 (Command & Control / Delivery)
+#===============================================================================
+
+# 3-1. HTTP로 PE(EXE) 다운로드 - 드라이브 바이 다운로드 / 페이로드 유입
+alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"MALWARE PE-EXE Download MZ Header over HTTP"; \
+    flow:established,to_client; file.data; content:"MZ"; startswith; \
+    content:"This program cannot be run in DOS mode"; distance:0; \
+    classtype:trojan-activity; metadata:mitre_technique_id T1105; \
+    sid:1000020; rev:1;)
+
+# 3-2. PowerShell 다운로드 크래들 (기본 UA)
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"C2 PowerShell Download Cradle User-Agent"; \
+    flow:established,to_server; http.user_agent; content:"WindowsPowerShell"; nocase; \
+    classtype:trojan-activity; metadata:mitre_technique_id T1059.001; \
+    sid:1000021; rev:1;)
+
+# 3-3. 의심 TLD로의 TLS 연결 (무료/동적 도메인 C2)
+alert tls $HOME_NET any -> $EXTERNAL_NET any (msg:"C2 TLS Connection to Suspicious TLD"; \
+    flow:established,to_server; tls.sni; \
+    pcre:"/\.(top|xyz|tk|gq|ml|cf|ga|duckdns\.org|ngrok\.io)$/i"; \
+    classtype:trojan-activity; metadata:mitre_technique_id T1071.001; \
+    sid:1000022; rev:1;)
+
+# 3-4. [예시 - 비활성화] 알려진 악성 JA3 핑거프린트
+#  실제 위협 인텔(예: abuse.ch SSLBL JA3 피드)에서 해시를 받아 채운 뒤 주석 해제.
+#  ja3.hash 사용 전 suricata.yaml에 ja3-fingerprints: yes 설정 필수.
+# alert tls $HOME_NET any -> $EXTERNAL_NET any (msg:"C2 Known Malicious JA3 Fingerprint"; \
+#     flow:established,to_server; ja3.hash; content:"<INSERT_JA3_HASH_HERE>"; \
+#     classtype:trojan-activity; metadata:mitre_technique_id T1071.001; \
+#     sid:1000023; rev:1;)
+
+# 3-5. Reverse Shell 시그니처 (평문 페이로드)
+alert tcp $HOME_NET any -> $EXTERNAL_NET any (msg:"C2 Reverse Shell Indicator bash -i"; \
+    flow:established,to_server; content:"bash -i"; \
+    pcre:"/bash\s+-i\s+(>&|>|2>&1)/"; \
+    classtype:trojan-activity; metadata:mitre_technique_id T1059.004; \
+    sid:1000024; rev:1;)
+
+#===============================================================================
+# [4] 측면 이동 (Lateral Movement)
+#===============================================================================
+
+# 4-1. SMB 기반 원격 서비스 실행 (PsExec 류)
+alert tcp $HOME_NET any -> $HOME_NET 445 (msg:"LATERAL SMB Remote Service Exec PsExec"; \
+    flow:established,to_server; content:"PSEXESVC"; nocase; \
+    classtype:trojan-activity; metadata:mitre_technique_id T1021.002; \
+    sid:1000030; rev:1;)
+
+#===============================================================================
+# [5] 데이터 유출 (Exfiltration)
+#===============================================================================
+
+# 5-1. DNS 터널링 의심 (비정상적으로 긴 쿼리)
+alert dns $HOME_NET any -> any any (msg:"EXFIL Possible DNS Tunneling Long Query"; \
+    dns.query; pcre:"/^[a-z0-9\-]{52,}\./i"; \
+    classtype:bad-unknown; metadata:mitre_technique_id T1071.004; \
+    sid:1000040; rev:1;)
+
+# 5-2. DNS 쿼리 폭주 (10초 내 동일 출발지 100회 이상)
+alert dns $HOME_NET any -> any any (msg:"EXFIL High Rate DNS Queries Possible Tunneling"; \
+    dns.opcode:0; \
+    threshold:type threshold, track by_src, count 100, seconds 10; \
+    classtype:bad-unknown; metadata:mitre_technique_id T1048; \
+    sid:1000041; rev:1;)
+
+# 5-3. DGA 의심 도메인 (고엔트로피 호스트명 휴리스틱)
+alert dns $HOME_NET any -> any any (msg:"EXFIL Possible DGA Domain High Entropy"; \
+    dns.query; \
+    pcre:"/^(?=[a-z0-9]{12,}\.)(?:[bcdfghjklmnpqrstvwxyz]{6,}|[0-9a-f]{16,})/i"; \
+    classtype:bad-unknown; metadata:mitre_technique_id T1568.002; \
+    sid:1000042; rev:1;)
+
+# 5-4. 도메인 없이 Raw IP 호스트로의 POST (C2 비콘 / 유출 휴리스틱)
+alert http $HOME_NET any -> $EXTERNAL_NET any (msg:"EXFIL Outbound POST to Raw IP Host"; \
+    flow:established,to_server; http.method; content:"POST"; \
+    http.host; pcre:"/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?$/"; \
+    classtype:bad-unknown; metadata:mitre_technique_id T1041; \
+    sid:1000043; rev:1;)

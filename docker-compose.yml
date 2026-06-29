@@ -61,7 +61,7 @@ services:
     image: jasonish/suricata:latest
     container_name: soc-suricata
     network_mode: "service:gateway"
-    command: ["suricata", "-i", "any", "-S", "/var/lib/suricata/rules/local.rules", "-vvv"]
+    command: ["suricata", "-i", "eth0", "-S", "/var/lib/suricata/rules/local.rules", "--set", "vars.address-groups.EXTERNAL_NET=any", "-vvv"]
     volumes:
       - ./suricata/rules:/var/lib/suricata/rules
       - ./suricata/log:/var/log/suricata

@@ -18,3 +18,4 @@ venv/
 ENV/
 fastapi/.env
 .env
+.forwarder_offset

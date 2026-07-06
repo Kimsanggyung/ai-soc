@@ -17,6 +17,48 @@ load_dotenv()
 
 router = APIRouter(prefix="/api/v1", tags=["AI SOAR Pipeline"])
 
+# ==============================================================================
+#확장 룰셋 대응 MITRE ATT&CK 사전 및 동적 위험도 산출 로직
+
+from datetime import datetime, timedelta
+
+MITRE_MATRIX = {
+    "🔴 [ALERT] ATTACK DETECTED: Path Traversal Attempt": {"t_code": "T1083", "category": "Discovery (파일 정찰)", "base_severity": 1.5},
+    "SQL Injection": {"t_code": "T1190", "category": "Initial Access (최초 침투)", "base_severity": 2.5},
+    "OS Command Injection": {"t_code": "T1203", "category": "Execution (악성 명령 실행)", "base_severity": 3.0},
+    "Webshell Upload Attempt": {"t_code": "T1505.003", "category": "Persistence (지속성 확보)", "base_severity": 3.0},
+    "C2 Connection Attempt": {"t_code": "T1071", "category": "Command and Control (명령 제어)", "base_severity": 2.8}
+}
+
+ATTACK_HISTORY = {}
+
+def calculate_ai_security_score(src_ip: str, signature_name: str, dest_port: int) -> dict:
+    current_time = datetime.now()
+    rule_data = MITRE_MATRIX.get(signature_name, {"base_severity": 1.0, "category": "Unknown Threat", "t_code": "T1568"})
+    rule_severity = rule_data["base_severity"]
+    
+    # 1. 자산 가중치 (Asset Weight): 중요 자산 포트 타깃 시 2.0배 가산
+    asset_weight = 2.0 if dest_port in [3306, 8080, 22] else 1.0
+        
+    # 2. 빈도 가중치 (Frequency Weight): 10초 내 동일 IP 반복 유입 시 시나리오 가산
+    if src_ip not in ATTACK_HISTORY:
+        ATTACK_HISTORY[src_ip] = []
+    ATTACK_HISTORY[src_ip] = [t for t in ATTACK_HISTORY[src_ip] if current_time - t < timedelta(seconds=10)]
+    ATTACK_HISTORY[src_ip].append(current_time)
+    
+    frequency_weight = min((len(ATTACK_HISTORY[src_ip]) - 1) * 5, 35)
+    
+    # 3. 100점 만점 스케일링 연산
+    calculated_score = (rule_severity * 20) * asset_weight + frequency_weight
+    final_score = min(calculated_score, 100.0)
+    
+    return {
+        "score": final_score,
+        "category": rule_data["category"],
+        "t_code": rule_data["t_code"]
+    }
+# ==============================================================================
+
 # 코드 내부에는 그 어떤 키값 문자열도 남기지 않고 오직 env에서만 꺼내옵니다.
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 
@@ -58,22 +100,31 @@ async def process_threat_agent(context: ThreatContext):
         attack_ip = context.meta_data.get("src_ip", "0.0.0.0")
         detected_sig = context.meta_data.get("signature", "Unknown")
         
+        # 🛡️ [지후 파트] 동적 스코어 연산 수행
+        ai_metrics = calculate_ai_security_score(attack_ip, detected_sig, context.dest_port)
+        dynamic_score = ai_metrics["score"]
+        
         rag_intelligence = query_rag_intelligence(attack_ip)
         security_context = {
             "raw_log": context.model_dump(),
-            "rag_threat_intelligence": rag_intelligence
+            "rag_threat_intelligence": rag_intelligence,
+            "mitre_framework": {
+                "t_code": ai_metrics["t_code"],
+                "category": ai_metrics["category"]
+            }
         }
 
-        # [STEP 1] LLM 1호기: 구조화 차단 파라미터 추출
+        # [STEP 1] LLM 1호기 프롬프트 수정: 계산된 지후 점수를 강제로 고정 반영하도록 유도
         llm_1_prompt = f"""
         You are a Senior Cyber Security Incident Response AI (Agent 1).
         Analyze the given Security Context and output a JSON object.
-        You MUST respond strictly with a valid JSON object matching this schema:
+        You MUST respond strictly with a valid JSON object matching this schema.
+        Note: You MUST set the "confidence_score" field exactly to {dynamic_score}.
         {{
             "block_ip": "{attack_ip}",
             "block_port": {context.dest_port},
             "attack_type": "string",
-            "confidence_score": 95.0,
+            "confidence_score": {dynamic_score},
             "mitigation_action": "DROP"
         }}
         [Security Context]

@@ -17,30 +17,46 @@ load_dotenv()
 
 router = APIRouter(prefix="/api/v1", tags=["AI SOAR Pipeline"])
 
-# ==============================================================================
 #확장 룰셋 대응 MITRE ATT&CK 사전 및 동적 위험도 산출 로직
 
 from datetime import datetime, timedelta
 
-MITRE_MATRIX = {
-    "🔴 [ALERT] ATTACK DETECTED: Path Traversal Attempt": {"t_code": "T1083", "category": "Discovery (파일 정찰)", "base_severity": 1.5},
-    "SQL Injection": {"t_code": "T1190", "category": "Initial Access (최초 침투)", "base_severity": 2.5},
-    "OS Command Injection": {"t_code": "T1203", "category": "Execution (악성 명령 실행)", "base_severity": 3.0},
-    "Webshell Upload Attempt": {"t_code": "T1505.003", "category": "Persistence (지속성 확보)", "base_severity": 3.0},
-    "C2 Connection Attempt": {"t_code": "T1071", "category": "Command and Control (명령 제어)", "base_severity": 2.8}
-}
+from datetime import datetime, timedelta
 
 ATTACK_HISTORY = {}
 
 def calculate_ai_security_score(src_ip: str, signature_name: str, dest_port: int) -> dict:
     current_time = datetime.now()
-    rule_data = MITRE_MATRIX.get(signature_name, {"base_severity": 1.0, "category": "Unknown Threat", "t_code": "T1568"})
-    rule_severity = rule_data["base_severity"]
+    sig_upper = signature_name.upper()
     
-    # 1. 자산 가중치 (Asset Weight): 중요 자산 포트 타깃 시 2.0배 가산
+    # 1. 18개 룰셋의 Prefix 키워드를 자동 분석하여 MITRE 및 severity_weight 매핑
+    if "WEB" in sig_upper:
+        base_severity = 3.0 if "UPLOAD" in sig_upper or "SHELL" in sig_upper else 2.5
+        category = "Initial Access / Execution (최초 침투 및 실행)"
+        t_code = "T1190" if "SQL" in sig_upper else ("T1059" if "COMMAND" in sig_upper else "T1505.003")
+    elif "RECON" in sig_upper:
+        base_severity = 1.0
+        category = "Reconnaissance (정찰 및 스캐닝)"
+        t_code = "T1595" if "USER-AGENT" in sig_upper else "T1046"
+    elif "MALWARE" in sig_upper or "C2" in sig_upper:
+        base_severity = 2.8
+        category = "Command and Control (명령 및 제어 / 페이로드 유입)"
+        t_code = "T1105" if "DOWNLOAD" in sig_upper else "T1071"
+    elif "LATERAL" in sig_upper:
+        base_severity = 3.0
+        category = "Lateral Movement (측면 이동)"
+        t_code = "T1021.002"
+    elif "EXFIL" in sig_upper:
+        base_severity = 3.0
+        category = "Exfiltration (데이터 무단 유출)"
+        t_code = "T1041" if "RAW IP" in sig_upper else ("T1048" if "HIGH RATE" in sig_upper else "T1071.004")
+    else:
+        base_severity = 1.5
+        category = "Suspicious Activity (기타 의심 행위)"
+        t_code = "T1568"
+
     asset_weight = 2.0 if dest_port in [3306, 8080, 22] else 1.0
         
-    # 2. 빈도 가중치 (Frequency Weight): 10초 내 동일 IP 반복 유입 시 시나리오 가산
     if src_ip not in ATTACK_HISTORY:
         ATTACK_HISTORY[src_ip] = []
     ATTACK_HISTORY[src_ip] = [t for t in ATTACK_HISTORY[src_ip] if current_time - t < timedelta(seconds=10)]
@@ -48,16 +64,14 @@ def calculate_ai_security_score(src_ip: str, signature_name: str, dest_port: int
     
     frequency_weight = min((len(ATTACK_HISTORY[src_ip]) - 1) * 5, 35)
     
-    # 3. 100점 만점 스케일링 연산
-    calculated_score = (rule_severity * 20) * asset_weight + frequency_weight
+    calculated_score = (base_severity * 20) * asset_weight + frequency_weight
     final_score = min(calculated_score, 100.0)
     
     return {
         "score": final_score,
-        "category": rule_data["category"],
-        "t_code": rule_data["t_code"]
+        "category": category,
+        "t_code": t_code
     }
-# ==============================================================================
 
 # 코드 내부에는 그 어떤 키값 문자열도 남기지 않고 오직 env에서만 꺼내옵니다.
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")

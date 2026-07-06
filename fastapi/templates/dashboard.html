@@ -8,14 +8,20 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+KR:wght@400;500;700&display=swap');
-        body { font-family: 'Noto Sans KR', sans-serif; background-color: #0d1117; color: #c9d1d9; }
+        body { font-family: 'Noto Sans KR', sans-serif; background-color: #070a13; color: #c9d1d9; }
         .code-font { font-family: 'JetBrains Mono', monospace; }
+        /* 스크롤바 커스텀 */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #0b0f19; }
+        ::-webkit-scrollbar-thumb { background: #1b2336; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #26334d; }
     </style>
 </head>
-<body class="p-6">
+<body class="p-6 min-h-screen flex flex-col">
+    
     <header class="flex justify-between items-center border-b border-gray-800 pb-4 mb-6">
         <div class="flex items-center space-x-3">
-            <i class="fa-solid fa-shield-halved text-red-500 text-3xl"></i>
+            <i class="fa-solid fa-shield-halved text-emerald-500 text-3xl"></i>
             <div>
                 <h1 class="text-2xl font-bold text-gray-100 tracking-tight">🛡️ AI-SOC 지능형 통합 보안 자동 관제 플랫폼</h1>
                 <p class="text-xs text-gray-400 mt-0.5">Suricata IDS + Llama 3.1 Real-Time SOAR Pipeline</p>
@@ -23,94 +29,229 @@
         </div>
         <div id="connection-badge" class="px-3 py-1.5 rounded-full text-xs font-semibold bg-red-950 text-red-400 border border-red-800 flex items-center space-x-2">
             <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
-            <span>파이프라인 연결 끊김 재시도 중</span>
+            <span>파이프라인 연결 확인 중</span>
         </div>
     </header>
 
-    <main class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <section class="lg:col-span-1 bg-gray-900 border border-gray-800 rounded-xl p-5 shadow-2xl flex flex-col justify-between">
+    <section class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-center space-x-4">
+            <div class="p-3 rounded-lg bg-orange-950/50 border border-orange-800 text-orange-400"><i class="fa-solid fa-triangle-exclamation text-xl"></i></div>
             <div>
-                <h2 class="text-lg font-bold text-gray-200 mb-4 flex items-center space-x-2">
-                    <i class="fa-solid fa-fire-burner text-orange-500"></i>
-                    <span>🚨 실시간 능동 대응 현황</span>
-                </h2>
-                <div class="bg-slate-950 border border-slate-800 rounded-lg p-6 text-center my-4">
-                    <p class="text-xs text-gray-400 uppercase font-bold tracking-wider">AI 위험도 예측 스코어</p>
-                    <div id="ai-score" class="text-5xl font-black text-gray-600 my-2 code-font">0.0</div>
-                </div>
-                <div class="space-y-3 mt-6 text-sm">
-                    <div class="flex justify-between p-2.5 bg-gray-950 rounded border border-gray-800">
-                        <span class="text-gray-400">능동 방화벽 액션:</span>
-                        <span id="soar-action" class="font-bold text-orange-400 code-font">READY</span>
-                    </div>
-                    <div class="flex justify-between p-2.5 bg-gray-950 rounded border border-gray-800">
-                        <span class="text-gray-400">차단 대상 IP 및 포트:</span>
-                        <span id="target-ioc" class="font-bold text-yellow-500 code-font">0.0.0.0 : --</span>
-                    </div>
-                </div>
+                <p class="text-xs text-gray-400 font-semibold">누적 탐지 위협 건수</p>
+                <h3 id="metric-total" class="text-2xl font-bold code-font text-gray-100">0</h3>
             </div>
-            <div class="mt-8 border-t border-gray-800 pt-4 text-xs text-gray-500 flex items-center space-x-2">
-                <i class="fa-solid fa-circle-notch animate-spin"></i>
-                <span id="status-text">패킷 유입 대기 중...</span>
+        </div>
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-center space-x-4">
+            <div class="p-3 rounded-lg bg-red-950/50 border border-red-800 text-red-400"><i class="fa-solid fa-ban text-xl"></i></div>
+            <div>
+                <p class="text-xs text-gray-400 font-semibold">자동 방화벽 차단(DROP)</p>
+                <h3 id="metric-blocked" class="text-2xl font-bold code-font text-red-400">0</h3>
+            </div>
+        </div>
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-center space-x-4">
+            <div class="p-3 rounded-lg bg-emerald-950/50 border border-emerald-800 text-emerald-400"><i class="fa-solid fa-crosshairs text-xl"></i></div>
+            <div>
+                <p class="text-xs text-gray-400 font-semibold">네트워크 위협 탐지율</p>
+                <h3 id="metric-rate" class="text-2xl font-bold code-font text-emerald-400">0.0%</h3>
+            </div>
+        </div>
+        <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-center space-x-4">
+            <div class="p-3 rounded-lg bg-blue-950/50 border border-blue-800 text-blue-400"><i class="fa-solid fa-bolt text-xl"></i></div>
+            <div>
+                <p class="text-xs text-gray-400 font-semibold">평균 자동화 대응 시간 (MTTR)</p>
+                <h3 id="metric-mttr" class="text-2xl font-bold code-font text-blue-400">0.0s</h3>
+            </div>
+        </div>
+    </section>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1">
+        
+        <section class="lg:col-span-1 bg-gray-900 border border-gray-800 rounded-xl p-5 flex flex-col h-[720px]">
+            <h2 class="text-base font-bold text-gray-200 mb-3 flex items-center justify-between">
+                <div class="flex items-center space-x-2">
+                    <i class="fa-solid fa-list-timeline text-orange-500"></i>
+                    <span>🚨 위협 스트리밍 리스트 (선택형)</span>
+                </div>
+                <span class="text-xs text-gray-500 font-normal">실시간 갱신 중</span>
+            </h2>
+            
+            <div id="event-stream-list" class="space-y-2 overflow-y-auto flex-1 pr-1 text-sm">
+                <div class="text-gray-500 italic text-center mt-20">보안 탐지 패킷 대기 중...</div>
+            </div>
+            
+            <div class="mt-4 border-t border-gray-800 pt-3 text-xs text-gray-500 flex items-center space-x-2">
+                <i class="fa-solid fa-circle-notch animate-spin text-emerald-500"></i>
+                <span id="status-text">인프라 대기 상태 정상</span>
             </div>
         </section>
 
-        <section class="lg:col-span-2 bg-gray-900 border border-gray-800 rounded-xl p-5 shadow-2xl">
-            <h2 class="text-lg font-bold text-gray-200 mb-4 flex items-center space-x-2">
-                <i class="fa-solid fa-file-invoice text-emerald-500"></i>
-                <span>📄 Llama 3.1 실시간 침해사고 분석 기술 보고서</span>
-            </h2>
-            <div id="report-viewport" class="bg-slate-950 border border-slate-800 rounded-lg p-6 h-[500px] overflow-y-auto text-sm leading-relaxed text-gray-300 prose prose-invert max-w-none">
-                <p class="text-gray-500 italic text-center mt-40">외부 공격 패킷이 유입되면, 실시간 완성형 마크다운 보안 보고서가 이곳에 동적 매핑됩니다.</p>
+        <section class="lg:col-span-2 flex flex-col space-y-4 h-[720px]">
+            
+            <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 flex flex-col h-[260px]">
+                <h3 class="text-sm font-bold text-gray-300 mb-2 flex items-center space-x-2">
+                    <i class="fa-solid fa-code text-blue-400"></i>
+                    <span>🔍 심층 패킷 페이로드 분석 (DPI & HTTP Context)</span>
+                </h3>
+                <div id="payload-viewport" class="bg-slate-950 border border-slate-900 rounded-lg p-4 flex-1 overflow-y-auto font-mono text-xs text-blue-300 leading-normal">
+                    <span class="text-gray-600 italic">좌측 리스트에서 특정 공격 이벤트를 선택하시면 원본 페이로드 덤프와 타겟 데이터가 가시화됩니다.</span>
+                </div>
             </div>
+
+            <div class="bg-gray-900 border border-gray-800 rounded-xl p-5 flex flex-col flex-1 overflow-hidden">
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="text-sm font-bold text-gray-300 flex items-center space-x-2">
+                        <i class="fa-solid fa-file-invoice text-emerald-400"></i>
+                        <span>📄 Llama 3.1 실시간 침해사고 분석 기술 보고서</span>
+                    </h3>
+                    <div class="flex items-center space-x-2 text-xs">
+                        <span class="text-gray-400">대응 상태:</span>
+                        <span id="detail-action" class="px-2 py-0.5 rounded bg-gray-950 border border-gray-800 text-gray-400 font-bold code-font">STANDBY</span>
+                    </div>
+                </div>
+                <div id="report-viewport" class="bg-slate-950 border border-slate-900 rounded-lg p-6 flex-1 overflow-y-auto text-sm leading-relaxed text-gray-300 prose prose-invert max-w-none">
+                    <p class="text-gray-500 italic text-center mt-20">선택된 위협의 인과관계 추론 보고서가 렌더링되는 영역입니다.</p>
+                </div>
+            </div>
+            
         </section>
-    </main>
+    </div>
 
     <script>
-        const badge = document.getElementById('connection-badge');
-        const aiScoreElement = document.getElementById('ai-score');
-        const soarActionElement = document.getElementById('soar-action');
-        const targetIocElement = document.getElementById('target-ioc');
-        const statusTextElement = document.getElementById('status-text');
-        const reportViewport = document.getElementById('report-viewport');
+        let selectedEventId = null;
 
-        const eventSource = new EventSource('/api/v1/stream');
-
-        eventSource.onopen = () => {
-            badge.className = "px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-950 text-emerald-400 border border-emerald-800 flex items-center space-x-2";
-            badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-500"></span><span>파이프라인 연결됨</span>`;
-            statusTextElement.innerText = "통합 보안 관제 인프라 가동 정상";
-        };
-
-        eventSource.addEventListener('threat_alert', (event) => {
+        // 1. 주기적으로 백엔드 전체 개요 지표 및 위협 스트리밍 리스트 동기화
+        async function fetchDashboardOverview() {
             try {
-                const payload = JSON.parse(event.data);
-                const score = parseFloat(payload.ai_score);
-                
-                aiScoreElement.innerText = score.toFixed(1);
-                if (score >= 80) {
-                    aiScoreElement.className = "text-5xl font-black text-red-500 my-2 code-font animate-bounce";
-                } else {
-                    aiScoreElement.className = "text-5xl font-black text-orange-400 my-2 code-font";
+                const response = await fetch('/api/v1/dashboard/overview');
+                if (!response.ok) return;
+                const data = await response.json();
+
+                // KPI 메트릭 가시화 데이터 바인딩
+                document.getElementById('metric-total').innerText = data.metrics.total_threats;
+                document.getElementById('metric-blocked').innerText = data.metrics.blocked_threats;
+                document.getElementById('metric-rate').innerText = data.metrics.detection_rate;
+                document.getElementById('metric-mttr').innerText = data.metrics.avg_mitigation_time;
+
+                const listContainer = document.getElementById('event-stream-list');
+                if (data.event_list.length === 0) {
+                    listContainer.innerHTML = `<div class="text-gray-500 italic text-center mt-20">보안 탐지 패킷 대기 중...</div>`;
+                    return;
                 }
 
-                soarActionElement.innerText = payload.action;
-                soarActionElement.className = "font-bold px-2 py-0.5 rounded bg-red-950 text-red-400 border border-red-800 code-font";
-                
-                targetIocElement.innerText = `${payload.rule_parameters.ip} : ${payload.rule_parameters.port}`;
-                statusTextElement.innerText = `🚨 위협 차단 완료: 공격 유형 [${payload.rule_parameters.attack_type}]`;
+                // 최신 공격이 상단에 노출되도록 역순 정렬
+                const sortedEvents = data.event_list.reverse();
+                listContainer.innerHTML = '';
 
-                reportViewport.innerHTML = marked.parse(payload.technical_report);
-                reportViewport.scrollTop = 0;
+                sortedEvents.forEach(evt => {
+                    const item = document.createElement('div');
+                    
+                    // 선택된 아이템 하이라이트 효과 적용
+                    const isSelected = evt.event_id === selectedEventId;
+                    const borderClass = isSelected ? 'border-blue-500 bg-gray-800/80' : 'border-gray-800 bg-gray-950 hover:bg-gray-800/40';
+                    
+                    // 액션 상태별 뱃지 컬러 바인딩
+                    let badgeClass = "bg-orange-950 text-orange-400 border-orange-800";
+                    if (evt.mitigation_action === "DROP") badgeClass = "bg-red-950 text-red-400 border-red-800";
+
+                    item.className = `p-3 rounded-lg border cursor-pointer transition duration-150 ${borderClass}`;
+                    item.innerHTML = `
+                        <div class="flex justify-between items-center text-xs text-gray-400 mb-1">
+                            <span class="code-font font-semibold text-blue-400">ID: ${evt.event_id}</span>
+                            <span>${evt.timestamp}</span>
+                        </div>
+                        <div class="text-sm font-bold text-gray-200 truncate mb-2">${evt.alert_msg}</div>
+                        <div class="flex justify-between items-center text-xs">
+                            <span class="text-gray-400"><i class="fa-solid fa-network-wired mr-1"></i>${evt.src_ip}</span>
+                            <span class="px-2 py-0.5 rounded border font-semibold text-[10px] ${badgeClass}">${evt.mitigation_action}</span>
+                        </div>
+                    `;
+                    
+                    // 리스트에서 공격 항목 클릭 시 패킷 상세 정보 및 보고서 렌더링 바인딩
+                    item.onclick = () => selectSecurityEvent(evt.event_id);
+                    listContainer.appendChild(item);
+                });
+
+                // 아무것도 선택하지 않은 초기 상태라면 최신 위협을 자동으로 선택 설정
+                if (selectedEventId === null && sortedEvents.length > 0) {
+                    selectSecurityEvent(sortedEvents[0].event_id);
+                }
+
             } catch (err) {
-                console.error("Payload decoding failure:", err);
+                console.error("Dashboard overview sync failed:", err);
             }
-        });
+        }
 
-        eventSource.onerror = () => {
-            badge.className = "px-3 py-1.5 rounded-full text-xs font-semibold bg-red-950 text-red-400 border border-red-800 flex items-center space-x-2";
-            badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span><span>연결 끊김 재시도 중</span>`;
-            statusTextElement.innerText = "서버 커넥션 불안정 - 백엔드 프로세스 가동 상태를 확인하세요.";
+        // 2. 특정 사건ID 클릭 시 우측 영역 데이터 전환 (선택형 뷰어)
+        async function selectSecurityEvent(eventId) {
+            selectedEventId = eventId;
+            
+            // 활성화 하이라이팅을 위해 리스트 즉시 리프레시
+            const response = await fetch(`/api/v1/dashboard/event/${eventId}`);
+            if (!response.ok) return;
+            const event = await response.json();
+
+            // A. 상단 뱃지 및 상태 문구 갱신
+            const actionBadge = document.getElementById('detail-action');
+            actionBadge.innerText = event.mitigation_action;
+            if (event.mitigation_action === "DROP") {
+                actionBadge.className = "px-2 py-0.5 rounded bg-red-950 text-red-400 border border-red-800 font-bold code-font";
+                document.getElementById('status-text').innerText = `🚨 [ID: ${eventId}] 위협 공격 대상 자동 격리 완료 (${event.src_ip})`;
+            } else {
+                actionBadge.className = "px-2 py-0.5 rounded bg-orange-950 text-orange-400 border border-orange-800 font-bold code-font";
+            }
+
+            // B. 심층 원본 페이로드 및 앱 레이어 정보 가시화
+            const payloadViewport = document.getElementById('payload-viewport');
+            payloadViewport.innerHTML = `
+                <div class="mb-2"><span class="text-yellow-500 font-bold">[RAW FLOW PAYLOAD]</span><br><span class="text-gray-300">${escapeHtml(event.payload_raw)}</span></div>
+                <div class="border-t border-gray-800 pt-2 mt-2 grid grid-cols-2 gap-2 text-gray-400">
+                    <div><span class="text-gray-500 font-semibold">Source IP:</span> <span class="text-gray-300">${event.src_ip}</span></div>
+                    <div><span class="text-gray-500 font-semibold">Protocol:</span> <span class="text-gray-300 uppercase">${event.proto}</span></div>
+                    <div><span class="text-gray-500 font-semibold">Request URI:</span> <span class="text-blue-400 underline">${escapeHtml(event.http_info.uri || 'N/A')}</span></div>
+                    <div><span class="text-gray-500 font-semibold">User-Agent:</span> <span class="text-gray-300">${escapeHtml(event.http_info.user_agent || 'N/A')}</span></div>
+                </div>
+            `;
+
+            // C. Llama 3.1 기술 보고서 마크다운 출력
+            const reportViewport = document.getElementById('report-viewport');
+            if (event.ai_report) {
+                reportViewport.innerHTML = marked.parse(event.ai_report);
+            } else {
+                reportViewport.innerHTML = `
+                    <div class="flex flex-col items-center justify-center h-full mt-20 text-gray-500 space-y-3">
+                        <i class="fa-solid fa-gear animate-spin text-2xl text-orange-400"></i>
+                        <p class="italic">Llama 3.1 봇이 보안 지식 DB 인텔리전스를 매핑하여 기술 보고서를 생성하고 있습니다...</p>
+                    </div>`;
+            }
+        }
+
+        // HTML 인젝션 방지 이스케이프 유틸리티
+        function escapeHtml(text) {
+            if (!text) return '';
+            return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        }
+
+        // 3. 백엔드 연결성 상시 검증 파이프라인 연동
+        function checkPipelineHealth() {
+            const badge = document.getElementById('connection-badge');
+            fetch('/').then(res => {
+                if (res.ok) {
+                    badge.className = "px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-950 text-emerald-400 border border-emerald-800 flex items-center space-x-2";
+                    badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-500"></span><span>파이프라인 연결됨</span>`;
+                }
+            }).catch(() => {
+                badge.className = "px-3 py-1.5 rounded-full text-xs font-semibold bg-red-950 text-red-400 border border-red-800 flex items-center space-x-2";
+                badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span><span>연결 끊김 재시도 중</span>`;
+            });
+        }
+
+        // 오케스트레이션 루프 시동 (3초 주기로 데이터 실시간 매핑)
+        setInterval(fetchDashboardOverview, 3000);
+        setInterval(checkPipelineHealth, 5000);
+        
+        window.onload = () => {
+            fetchDashboardOverview();
+            checkPipelineHealth();
         };
     </script>
 </body>

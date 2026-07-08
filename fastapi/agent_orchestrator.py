@@ -29,32 +29,46 @@ def calculate_ai_security_score(src_ip: str, signature_name: str, dest_port: int
     current_time = datetime.now()
     sig_upper = signature_name.upper()
     
-    # 1. 18개 룰셋의 Prefix 키워드를 자동 분석하여 MITRE 및 severity_weight 매핑
-    if "WEB" in sig_upper:
-        base_severity = 3.0 if "UPLOAD" in sig_upper or "SHELL" in sig_upper else 2.5
-        category = "Initial Access / Execution (최초 침투 및 실행)"
-        t_code = "T1190" if "SQL" in sig_upper else ("T1059" if "COMMAND" in sig_upper else "T1505.003")
-    elif "RECON" in sig_upper:
-        base_severity = 1.0
-        category = "Reconnaissance (정찰 및 스캐닝)"
-        t_code = "T1595" if "USER-AGENT" in sig_upper else "T1046"
-    elif "MALWARE" in sig_upper or "C2" in sig_upper:
-        base_severity = 2.8
-        category = "Command and Control (명령 및 제어 / 페이로드 유입)"
-        t_code = "T1105" if "DOWNLOAD" in sig_upper else "T1071"
-    elif "LATERAL" in sig_upper:
+    base_severity = 1.5
+    category = "Suspicious Activity (기타 의심 행위)"
+    t_code = "T1568"
+   
+    if "EXFIL" in sig_upper or "TUNNELING" in sig_upper or "DATA" in sig_upper:
         base_severity = 3.0
-        category = "Lateral Movement (측면 이동)"
-        t_code = "T1021.002"
-    elif "EXFIL" in sig_upper:
-        base_severity = 3.0
-        category = "Exfiltration (데이터 무단 유출)"
+        category = "5~6단계: Exfiltration (DNS 터널링 및 기밀 데이터 유출)"
         t_code = "T1041" if "RAW IP" in sig_upper else ("T1048" if "HIGH RATE" in sig_upper else "T1071.004")
-    else:
-        base_severity = 1.5
-        category = "Suspicious Activity (기타 의심 행위)"
-        t_code = "T1568"
 
+    elif "LATERAL" in sig_upper or "SMB" in sig_upper or "PSEXEC" in sig_upper:
+        base_severity = 3.0
+        category = "4단계: Lateral Movement (내부 자산 장악 및 원격 서비스 실행)"
+        t_code = "T1021.002"
+        
+    elif "C2" in sig_upper or "MALWARE" in sig_upper or "POWERSHELL" in sig_upper or "REVERSE" in sig_upper:
+        base_severity = 2.8
+        category = "3단계: Command & Control (C2 비콘 및 리버스 셸 연결)"
+        t_code = "T1059.004" if "REVERSE" in sig_upper else "T1105"
+   
+    elif "COMMAND" in sig_upper or "INJECTION" in sig_upper or "EXEC" in sig_upper:
+        base_severity = 2.8
+        category = "2단계: Execution (OS 명령 실행 및 RCE 시도)"
+        t_code = "T1059"
+        
+    elif "WEB" in sig_upper:
+        if "UPLOAD" in sig_upper or "SHELL" in sig_upper:
+            base_severity = 3.0
+            category = "1단계: Web Shell Upload (웹셸 기반 최초 침투)"
+            t_code = "T1505.003"
+        else:
+            base_severity = 2.5
+            category = "1단계: Web Application Attack (취약점 우회 및 침투 시도)"
+            t_code = "T1083"
+
+    elif "RECON" in sig_upper or "SCAN" in sig_upper:
+        base_severity = 1.0
+        category = "정찰 단계: Reconnaissance (포트 스캔 및 취약점 탐색)"
+        t_code = "T1595" if "USER-AGENT" in sig_upper else "T1046"
+
+   
     asset_weight = 2.0 if dest_port in [3306, 8080, 22] else 1.0
         
     if src_ip not in ATTACK_HISTORY:

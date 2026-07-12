@@ -206,6 +206,24 @@ async def process_threat_agent(context: ThreatContext):
             execute_firewall_drop(orchestrated_data["rule_parameters"]["ip"], orchestrated_data["rule_parameters"]["port"])
 
         await UI_EVENT_QUEUE.put(orchestrated_data)
+        import main
+        main.EVENT_ID_COUNTER += 1
+        event_id = main.EVENT_ID_COUNTER
+        main.SECURITY_EVENTS[event_id] = {
+            "event_id": event_id,
+            "timestamp": __import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "src_ip": orchestrated_data["rule_parameters"]["ip"],
+            "dest_ip": context.meta_data.get("dest_ip", "N/A"),
+            "proto": "TCP",
+            "alert_msg": detected_sig,
+            "sid": 0,
+            "payload_raw": "No Payload Data",
+            "http_info": {},
+            "status": "COMPLETED",
+            "risk_score": orchestrated_data["ai_score"],
+            "mitigation_action": orchestrated_data["action"],
+            "ai_report": orchestrated_data["technical_report"],
+        }
         return orchestrated_data
 
     except Exception as e:
